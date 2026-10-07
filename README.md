@@ -30,7 +30,7 @@ Designing and evaluating custom RISC-V instructions to accelerate important Tran
 
 ## Proposed repository structure (planned, will change)
 
-```
+```text
 cecs530-riscv-transformer-isa-extension/
 ├── README.md
 ├── docs/        # ISA spec, design notes, setup guide
