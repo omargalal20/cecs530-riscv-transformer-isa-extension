@@ -1,4 +1,4 @@
-# cecs530-riscv-transformer-isa-extension
+# Custom ISA Extensions for Transformer Primitives
 
 Custom RISC-V ISA extensions that accelerate Transformer primitives.
 Semester project for **CECS 530 – Advanced Computer Architecture** (CSULB).
