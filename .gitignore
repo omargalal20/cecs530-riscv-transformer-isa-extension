@@ -1,0 +1,28 @@
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build output and local installs (regenerate with scripts)
+build/
+third_party/
+*.elf
+*.o
+*.so
+
+# Logs, traces, waveforms
+*.log
+*.trace
+results/traces/
+*.vcd
+*.fst
+
+.env
