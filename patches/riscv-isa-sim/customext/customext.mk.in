@@ -1,0 +1,7 @@
+customext_subproject_deps = 
+
+customext_srcs = \
+	cflush.cc \
+        dot4.cc \
+
+customext_install_shared_lib = yes
