@@ -35,7 +35,7 @@ def main():
     # 1. Instruction counts (log scale: sizes span 64x)
     fig, ax = plt.subplots(figsize=(7, 4.2))
     x = range(len(sizes))
-    b = ax.bar([i - 0.2 for i in x], [int(r["base_instr"]) for r in res], 0.38, color=BASE, label="Baseline (RV32IM loop)")
+    b = ax.bar([i - 0.2 for i in x], [int(r["base_instr"]) for r in res], 0.38, color=BASE, label="Baseline (software)")
     c = ax.bar([i + 0.2 for i in x], [int(r["custom_instr"]) for r in res], 0.38, color=CUST, label=f"With {title}")
     ax.bar_label(b, fontsize=9, padding=2); ax.bar_label(c, fontsize=9, padding=2)
     ax.set_yscale("log"); ax.set_xticks(list(x)); ax.set_xticklabels(labels)
@@ -67,16 +67,18 @@ def main():
     for l, s in zip(lat, sp):
         ax.annotate(f"{s:.2f}x", (l, s), textcoords="offset points", xytext=(0, 8), ha="center", fontsize=9, color=MUTED)
     ax.set_xlabel(f"Assumed {title} latency (cycles)"); ax.set_ylabel("Modeled speedup over baseline")
-    ax.set_title(f"{title}: sensitivity to the latency assumption (n = 1024)", loc="left")
+    ax.set_title(f"{title}: sensitivity to the latency assumption (n = {max(sizes)})", loc="left")
     ax.set_ylim(0, max(sp) * 1.2); ax.legend(frameon=False)
     save(fig, f"{name}_sensitivity")
 
     # 4. Instruction mix at the largest size
     counts = rows(f"build/{name}_counts.csv")
-    big = [i for i, r in enumerate(res) if int(r["n"]) == 1024][0]
+    big = max(range(len(res)), key=lambda i: int(res[i]["n"]))
     base_row, cust_row = counts[2 * big], counts[2 * big + 1]
-    groups = {"ALU": ["alu"], "Load": ["load"], "Multiply": ["mul"], "Branch": ["branch", "branch_taken"],
-              "Jump": ["jump"], title: [mnem]}
+    groups = {"ALU": ["alu"], "Load/store": ["load", "store", "fp_load", "fp_store"],
+              "Multiply/divide": ["mul", "div"],
+              "FP arithmetic": ["fp_add", "fp_mul", "fp_fma", "fp_div", "fp_sqrt"], "FP other": ["fp_other"],
+              "Branch/jump": ["branch", "branch_taken", "jump"], title: [mnem]}
     fig, ax = plt.subplots(figsize=(7, 3.4))
     seen = set()
     for y, (lab, row) in enumerate([("With " + title, cust_row), ("Baseline", base_row)]):
@@ -86,15 +88,15 @@ def main():
             if v:
                 ax.barh(y, v, left=left, color=color, edgecolor=SURFACE, linewidth=2, height=0.55, label=g if g not in seen else None)
                 seen.add(g)
-                if v > 400:
+                if v > 0.05 * int(base_row['total']):
                     ax.text(left + v / 2, y, str(v), ha="center", va="center", color="white", fontsize=9, fontweight="bold")
             left += v
         ax.text(left + 80, y, f"{left}", va="center", fontsize=10)
     ax.set_yticks([0, 1]); ax.set_yticklabels(["With " + title, "Baseline"]); ax.grid(axis="y", visible=False)
-    ax.set_xlabel("Instructions executed (n = 1024)"); ax.set_title(f"{title}: instruction mix", loc="left")
+    ax.set_xlabel(f"Instructions executed (n = {int(res[big]['n'])})"); ax.set_title(f"{title}: instruction mix", loc="left")
     handles, labs = ax.get_legend_handles_labels()
     ax.legend(handles, labs, frameon=False, ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.38), fontsize=9)
-    ax.set_xlim(right=8200)
+    ax.set_xlim(right=max(int(base_row['total']), int(cust_row['total'])) * 1.15)
     save(fig, f"{name}_mix")
 
 
