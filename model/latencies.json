@@ -1,0 +1,28 @@
+{
+  "reference_core": "OpenHW CV32E40P (RV32IMFC), user manual, Pipeline Details: 'Cycle counts per instruction type'",
+  "cycles": {
+    "alu": 1,
+    "mul": 1,
+    "div": 35,
+    "load": 1,
+    "store": 1,
+    "branch": 1,
+    "branch_taken": 3,
+    "jump": 2,
+    "csr": 1,
+    "fp_load": 1,
+    "fp_store": 1,
+    "fp_add": 3,
+    "fp_mul": 3,
+    "fp_fma": 3,
+    "fp_div": 19,
+    "fp_sqrt": 19,
+    "fp_other": 2,
+    "dot4": 2,
+    "gelu": 8
+  },
+  "source": {
+    "documented": "alu 1, mul 1, load/store 1, branch not-taken 1, branch taken 3, jump 2, div 3..35 (worst case used), fdiv/fsqrt 1..19 (worst case used)",
+    "assumed": "fp_add/fp_mul/fp_fma/fp_other (manual gives a configurable range, we pick 3 and 2), dot4 (our own instruction, swept 1..4), gelu (our own instruction, swept widely)"
+  }
+}
