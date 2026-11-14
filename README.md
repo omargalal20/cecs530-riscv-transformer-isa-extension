@@ -108,17 +108,17 @@ The brief requires at least two instructions. Fallback set: dot product, GELU an
 
 ## Getting Started
 
-Steps 1 to 4 were checked on Ubuntu 24.04. The full Spike build (step 3) is being verified; see [Project Status](#project-status). Once it works, these steps will be replaced by `scripts/setup.sh`.
+Checked on Ubuntu 24.04 (WSL) and in a cloud Ubuntu 24.04 container: both give identical results.
 
 ### 1. Prerequisites
 
 | Platform | Install |
 |---|---|
 | **Windows** | Install WSL 2 with Ubuntu 24.04 (`wsl --install -d Ubuntu-24.04`), then work inside the Linux filesystem (`~/`), not under `/mnt/c`. Follow the Ubuntu line below. |
-| **Ubuntu 24.04** | `sudo apt update && sudo apt install -y build-essential git python3 device-tree-compiler libboost-regex-dev libboost-system-dev gcc-riscv64-unknown-elf` |
+| **Ubuntu 24.04** | `sudo apt update && sudo apt install -y build-essential git python3 python3-matplotlib device-tree-compiler libboost-regex-dev libboost-system-dev gcc-riscv64-unknown-elf` |
 | **macOS** | Not yet tested |
 
-Check the compiler: `riscv64-unknown-elf-gcc --version` (expect GCC 13.2.0).
+Run `sudo apt update` first: a stale package list gives `404 Not Found` errors. Check the compiler: `riscv64-unknown-elf-gcc --version` (we used GCC 13.2.0; instruction counts can change with the compiler version).
 
 ### 2. Clone the repository
 
@@ -127,48 +127,59 @@ git clone https://github.com/omargalal20/cecs530-riscv-transformer-isa-extension
 cd cecs530-riscv-transformer-isa-extension
 ```
 
-### 3. Build Spike at the pinned commit
+### 3. Build Spike and our instruction plugins
 
 ```bash
-mkdir -p third_party
-git clone https://github.com/riscv-software-src/riscv-isa-sim.git third_party/riscv-isa-sim
-cd third_party/riscv-isa-sim
-git checkout 4c6a9bc79dab80616932949707e7c0471d8e9e54
-git submodule update --init
-mkdir build && cd build
-../configure --prefix=$HOME/cecs530-riscv-transformer-isa-extension/third_party/install
-make -j$(nproc)
-make install
+./scripts/setup.sh
 ```
 
-The build takes roughly 10 to 20 minutes. The `--prefix` path assumes the repo was cloned directly into your home folder; adjust it if not.
+This fetches Spike at the pinned commit `4c6a9bc`, copies the plugin sources from `patches/riscv-isa-sim/customext/` into it, and builds everything into `third_party/install/`. The first run takes roughly 10 to 20 minutes; re-runs take a few minutes. It ends with `Done. Spike: ...`.
 
-### 4. Check that Spike runs
+### 4. Run the DOT4 experiment
 
 ```bash
-~/cecs530-riscv-transformer-isa-extension/third_party/install/bin/spike --help 2>&1 | head -3
+./scripts/run_dot.sh
 ```
 
-Expect a first line like `Spike RISC-V ISA Simulator 1.1.1-dev`.
+Expect six `PASS` lines, then `results: results/bench_dot_results.csv, plots: results/plots/`. The row for n=1024 should read `rand_1024,1024,7173,1802,3.981,9220,2569,3.589`.
 
-### 5. Build and run a kernel
+What the script does: builds the kernels, runs them on Spike with the DOT4 plugin, counts executed instructions from Spike's trace (`scripts/analyze.py`), applies the cost model (`scripts/model.py`, table in `model/latencies.json`) and draws the plots (`scripts/plots.py`).
 
-**TBD** — added once the steps above are verified.
+### 5. Build and run your own program
+
+```bash
+./scripts/build.sh <name> <sources.c ...>     # writes build/<name>.elf
+./scripts/run.sh <name> dot4                  # runs on Spike, trace in build/<name>.log
+```
+
+Pass one extension name per plugin, for example `./scripts/run.sh gelu_test dot4 gelu`.
+
+### Adding a new instruction
+
+1. Write `patches/riscv-isa-sim/customext/<name>.cc` (copy `dot4.cc` as a template).
+2. Run `./scripts/setup.sh`. Every `.cc` file in that folder is built into the plugin.
+3. Use the instruction from C with `.insn r ...` inline assembly (see `kernels/dot/dot.c`).
+4. Add its mnemonic and a latency to `scripts/analyze.py` and `model/latencies.json`.
 
 ### Troubleshooting
 
 | Symptom | Cause and fix |
 |---|---|
-| `No rule to make target '../softfloat/softfloat_upstream.h'` | Spike's floating-point library is a git submodule that was not fetched. Run `git submodule update --init` inside `third_party/riscv-isa-sim`. |
+| `No rule to make target '../softfloat/softfloat_upstream.h'` | Spike's floating-point library is a git submodule that was not fetched. `setup.sh` fetches it; if you build by hand, run `git submodule update --init` inside `third_party/riscv-isa-sim`. |
+| `Plugin "imsic_mmio" already registered` | The plugin library bundled a full copy of Spike. Re-run `./scripts/setup.sh`; it writes a minimal build file. `libcustomext.so` should be about 400 KB, not 300 MB. |
+| `apt` says `404 Not Found` | Stale package list. Run `sudo apt update` and retry. |
+| Spike hangs on a custom instruction | The plugin was not loaded. Pass the extension name to `scripts/run.sh`. |
+| `unknown instruction '<x>'` from `analyze.py` | A new instruction needs an entry in `CLASSES` in `scripts/analyze.py`. |
+| `no latency for instruction class '<x>'` | Add the class to `model/latencies.json`. |
 
 ## Results
 
-Populated as runs complete.
+Populated as runs complete. Full DOT4 results for all sizes are in `results/bench_dot_results.csv`.
 
 | Kernel | Variant | Input size | Instructions | Modeled cycles | Speedup vs baseline | Correct |
 |---|---|---|---|---|---|---|
-| dot (int8) | baseline | — | — | — | 1.00 | — |
-| dot (int8) | custom | — | — | — | — | — |
+| dot (int8) | baseline | 1024 | 7173 | 9220 | 1.00 | yes |
+| dot (int8) | custom (DOT4, 2-cycle assumed) | 1024 | 1802 | 2569 | 3.59 | yes |
 | GELU | baseline | — | — | — | 1.00 | — |
 | GELU | custom | — | — | — | — | — |
 
