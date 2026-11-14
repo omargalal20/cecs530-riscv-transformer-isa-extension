@@ -52,7 +52,7 @@ def main():
     rows = read_counts(f"build/{name}_counts.csv")
     names, sizes = case_names(f"build/{name}.out")
     out = open(f"results/{name}_results.csv", "w", newline="")
-    w = csv.writer(out)
+    w = csv.writer(out, lineterminator="\n")
     w.writerow(["case", "n", "base_instr", "custom_instr", "instr_ratio",
                 "base_cycles", "custom_cycles", "speedup"])
     for (b, c), case, n in zip(paired(rows, base_k, cust_k), names, sizes):
@@ -63,7 +63,7 @@ def main():
     # Sensitivity: sweep the custom instruction's latency on the largest random case
     big = [p for p, nm in zip(paired(rows, base_k, cust_k), names) if nm.startswith("rand_1024")][0]
     with open(f"results/{name}_sensitivity.csv", "w", newline="") as f:
-        sw = csv.writer(f)
+        sw = csv.writer(f, lineterminator="\n")
         sw.writerow([f"{mnem}_latency_cycles", "speedup"])
         for lat in range(1, 9):
             sw.writerow([lat, round(cycles(big[0]) / cycles(big[1], {mnem: lat}), 3)])
