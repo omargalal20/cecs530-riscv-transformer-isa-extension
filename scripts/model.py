@@ -13,6 +13,9 @@ import sys
 
 LAT = json.load(open("model/latencies.json"))["cycles"]
 
+# Latencies tried for the custom instruction. GELU is a bigger unit than DOT4, so it gets a wider sweep.
+SWEEPS = {"dot4": range(1, 9), "gelu": [1, 2, 4, 8, 16, 24, 32, 48, 64]}
+
 
 def class_of_custom(mnemonic):
     return mnemonic          # the class name of a custom instruction equals its mnemonic
@@ -61,11 +64,12 @@ def main():
         w.writerow([case, n, bi, ci, round(bi / ci, 3), bc, cc, round(bc / cc, 3)])
     out.close()
     # Sensitivity: sweep the custom instruction's latency on the largest random case
-    big = [p for p, nm in zip(paired(rows, base_k, cust_k), names) if nm.startswith("rand_1024")][0]
+    random_cases = [(n, pair) for pair, nm, n in zip(paired(rows, base_k, cust_k), names, sizes) if nm.startswith("rand_")]
+    big = max(random_cases, key=lambda c: c[0])[1]
     with open(f"results/{name}_sensitivity.csv", "w", newline="") as f:
         sw = csv.writer(f, lineterminator="\n")
         sw.writerow([f"{mnem}_latency_cycles", "speedup"])
-        for lat in range(1, 9):
+        for lat in SWEEPS.get(mnem, range(1, 9)):
             sw.writerow([lat, round(cycles(big[0]) / cycles(big[1], {mnem: lat}), 3)])
 
 
