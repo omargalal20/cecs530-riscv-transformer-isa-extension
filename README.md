@@ -62,13 +62,13 @@ The brief requires at least two instructions. Fallback set: dot product, GELU an
 ## Methodology
 
 ```
- kernel.c ──► GCC (RV32IM) ──► program.elf ──► Spike (+ our instruction) ──► instruction counts ──► cost model (Python) ──► cycles, speedup, graphs
+ kernel.c ──► GCC (RV32IMF) ──► program.elf ──► Spike (+ our instruction) ──► instruction counts ──► cost model (Python) ──► cycles, speedup, graphs
  (baseline | custom)
 
  Python reference ──► expected outputs ──► compared with the program's output (correctness)
 ```
 
-**Simulator.** [Spike](https://github.com/riscv-software-src/riscv-isa-sim), pinned to commit `4c6a9bc` so all three of us build the same code. Spike is a functional simulator: it runs programs correctly but has no timing model. Its documented way to add an instruction is a behavior file plus an opcode entry in the Spike source tree [5]. Spike can also load instructions from a shared library with `--extlib`, which would let us leave Spike unmodified. Which route we use is **TBD**.
+**Simulator.** [Spike](https://github.com/riscv-software-src/riscv-isa-sim), pinned to commit `4c6a9bc` so all three of us build the same code. Spike is a functional simulator: it runs programs correctly but has no timing model. Its documented way to add an instruction is a behavior file plus an opcode entry in the Spike source tree [5]. Spike can also load instructions from a shared library with `--extlib`, which would let us leave Spike unmodified. We use the plugin route: our instructions live in `patches/riscv-isa-sim/customext/` and `scripts/setup.sh` builds them into a plugin library that Spike loads with `--extlib` and `--extension`.
 
 **Cycle model.** Cycles are modeled, not measured: cycles = Σ (instruction count × assumed latency per instruction class). The latency table will live in `bench/`. We sweep the custom instruction's latency (for example 1 to 4 cycles) to show how sensitive the speedup is. Whether a modeled cycle count is acceptable is being confirmed with the instructor.
 
@@ -180,9 +180,9 @@ Project due **Nov 20, 2026**. Presentations on **Nov 21** and **Dec 5, 2026**.
 |---|---|
 | Topic selected, team registered | Complete |
 | Drive, repository and one-pager | Complete |
-| Toolchain and Spike build verified | In progress |
-| Baseline kernel running on Spike | Not started |
-| Custom instruction running in Spike | Not started |
+| Toolchain and Spike build verified | Complete |
+| Baseline kernel running on Spike | Complete (DOT product) |
+| Custom instruction running in Spike | Complete (DOT4); GELU in progress |
 | Cycle model and experiments | Not started |
 | Report and presentation | Not started |
 
