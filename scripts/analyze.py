@@ -2,7 +2,7 @@
 
 Usage: python3 scripts/analyze.py <name> <kernel_symbol> [<kernel_symbol> ...]
 Reads build/<name>.log and build/<name>.elf, prints one CSV row per kernel call.
-A "call" is an unbroken run of instructions whose address lies inside the kernel function.
+A "call" runs from the kernel's first instruction to its matching return, including helper functions it calls.
 """
 import re
 import subprocess
@@ -49,31 +49,38 @@ def symbols(elf, names):
 
 def kernel_calls(log, table):
     """Yield (kernel_name, Counter of classes) for each call, in execution order.
-    A branch whose next instruction is not at pc+4 was taken; it is moved to "branch_taken"."""
-    current, counts = None, None
-    prev_branch_pc = None
+    A call starts when the kernel's first instruction runs and ends at its matching `ret`,
+    so helper functions the kernel calls are counted too (jal/jalr go one level deeper,
+    ret comes back up). A branch whose next instruction is not at pc+4 was taken; it is
+    moved to "branch_taken"."""
+    starts = {lo: name for name, (lo, hi) in table.items()}
+    active, counts, depth, prev_branch_pc = None, None, 0, None
     for line in open(log):
         m = LINE.match(line)
         if not m:
             continue
         pc, mnem = int(m.group(1), 16), m.group(2)
+        if active is None:
+            if pc not in starts:
+                continue
+            active, counts, depth, prev_branch_pc = starts[pc], Counter(), 0, None
         if prev_branch_pc is not None and pc != prev_branch_pc + 4:
             counts["branch"] -= 1
             counts["branch_taken"] += 1
         prev_branch_pc = None
-        inside = next((n for n, (lo, hi) in table.items() if lo <= pc < hi), None)
-        if inside != current:
-            if current is not None:
-                yield current, counts
-            current, counts = inside, Counter()
-        if inside is not None:
-            if mnem not in CLASS_OF:
-                sys.exit(f"unknown instruction '{mnem}' at {pc:#x}: add it to CLASSES")
-            counts[CLASS_OF[mnem]] += 1
-            if CLASS_OF[mnem] == "branch":
-                prev_branch_pc = pc
-    if current is not None:
-        yield current, counts
+        if mnem not in CLASS_OF:
+            sys.exit(f"unknown instruction '{mnem}' at {pc:#x}: add it to CLASSES")
+        counts[CLASS_OF[mnem]] += 1
+        if CLASS_OF[mnem] == "branch":
+            prev_branch_pc = pc
+        if mnem in ("jal", "jalr"):
+            depth += 1
+        elif mnem == "ret":
+            if depth == 0:
+                yield active, counts
+                active = None
+            else:
+                depth -= 1
 
 
 def main():
