@@ -62,6 +62,15 @@ int32_t gelu_baseline(int32_t x) {
     return (int32_t) round_shift((int64_t) x * (32768 + tanh_value), 16); // 0.5 * x * result from tanh, 0.5 = 32768 in Q24
 }
 
+__attribute__((noinline))
+int32_t gelu_custom(int32_t x) {
+    int32_t result;
+    __asm__ volatile (
+        ".insn r 0x0b, 1, 0, %0, %1, x0"
+        : "=r"(result) : "r"(x));
+    return result;
+}
+
 // GELU reference used to validate the baseline implementation
 float gelu_ref(float x) {
     return 0.5f * x * (1.0f + tanhf(0.7978845608f * (x + 0.044715f * x * x * x)));
