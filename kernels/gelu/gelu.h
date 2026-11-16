@@ -15,7 +15,5 @@ int32_t gelu_baseline(int32_t x);
 // Same result using the custom GELU instruction.
 int32_t gelu_custom(int32_t x);
 
-// Floating-point GELU reference used for accuracy comparisons.
-float gelu_ref(float x);
 
 #endif

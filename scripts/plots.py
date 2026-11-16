@@ -6,6 +6,7 @@ Usage:
 """
 
 import csv
+import os
 import sys
 import matplotlib
 matplotlib.use("Agg")
@@ -41,14 +42,20 @@ def rows(path):
         return list(csv.DictReader(f))
 
 
+OUT_DIR = "results/plots"
+
+
 def save(fig, name):
     fig.tight_layout()
-    fig.savefig(f"results/plots/{name}.png", dpi=200)
+    fig.savefig(f"{OUT_DIR}/{name}.png", dpi=200)
     plt.close(fig)
 
 
 def main():
+    global OUT_DIR
     name, title, mnem = sys.argv[1:4]
+    OUT_DIR = f"results/plots/{mnem}"
+    os.makedirs(OUT_DIR, exist_ok=True)
     is_gelu = mnem == "gelu"
 
     all_results = rows(f"results/{name}_results.csv")
