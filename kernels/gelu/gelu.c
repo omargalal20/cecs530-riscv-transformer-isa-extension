@@ -1,101 +1,77 @@
-
 #include "gelu.h"
-#include "gelu_lut.h"
+#include "gelu_lut.h" // the generated 65-entry Q15 table 
+#include <math.h>
+#include <stdint.h>
 
-// Round a signed integer division by 2^shift to nearest,
-// with ties away from zero.
-//
-// All values passed to this helper are bounded well within int64_t.
-static int64_t round_shift_away(int64_t value, unsigned int shift)
-{
-    int64_t half = 1LL << (shift - 1);
-
-    if (value >= 0)
+// Returns value divided by 2^shift, rounded to nearest, ties away from zero
+static inline __attribute__((always_inline))
+int64_t round_shift(int64_t value, int shift) {
+    int64_t half = (int64_t) 1 << (shift - 1);
+    if (value >= 0) {
         return (value + half) >> shift;
-
-    return -(((-value) + half) >> shift);
+    } else {
+        return -(((-value) + half) >> shift);
+    }
 }
 
-// Approximate tanh(z), where z is represented in Q24.
-// Returns a signed Q15 result.
-static int32_t gelu_tanh_q15(int64_t z_q24)
-{
-    const int64_t step = 1LL << 20;  // 1/16 in Q24
-    const int64_t limit = 4LL << 24;
-
-    int sign = (z_q24 < 0) ? -1 : 1;
-    int64_t magnitude = (z_q24 < 0) ? -z_q24 : z_q24;
-
-    // Clamp to the final LUT entry outside [-4, 4].
-    if (magnitude >= limit)
-        return sign * gelu_tanh_lut_q15[64];
-
-    // Determine the LUT interval and interpolation fraction.
-    unsigned int index = (unsigned int)(magnitude >> 20);
-    int64_t remainder = magnitude & (step - 1);
-
-    int32_t lower = gelu_tanh_lut_q15[index];
-    int32_t upper = gelu_tanh_lut_q15[index + 1];
-
-    int64_t delta = (int64_t)(upper - lower) * remainder;
-
-    int64_t interpolated =
-        (int64_t)lower + round_shift_away(delta, 20);
-
-    return sign * (int32_t)interpolated;
-}
-
-// Software GELU implementation.
-//
-// Input/output: signed Q8
-// Polynomial intermediate: signed Q24
-// Tanh LUT output: signed Q15
+// Input: signed 32-bit integer stored in Q8 fixed-point format
 __attribute__((noinline))
-int32_t gelu_baseline(int32_t x_q8)
-{
-    // At and beyond these boundaries, the Q8 GELU result
-    // rounds to x for positive inputs and zero for negative inputs.
-    if (x_q8 >= 1024)
-        return x_q8;
+int32_t gelu_baseline(int32_t x) {
+    // Q8 uses a scale factor of 256, so 1024 / 256 = 4.0 and -1024 / 256 = -4.0
+    if (x >= 1024) 
+        return x; // as x >= 4, tanh(z) approaches 1, GELU(x) ≈ x
+    
+    if (x <= -1024)
+        return 0; // as x <= -4, tanh(z) approaches -1, so GELU(x) ≈ 0
 
-    if (x_q8 <= -1024)
-        return 0;
+    // Convert x from Q8 to Q24 (2^24 / 2^8 = 2^16)
+    int64_t x_q24 = (int64_t) x * 65536;
+    
+    // Gelu calculations
+    int64_t x_squared = round_shift(x_q24 * x_q24, 24);
+    int64_t x_cubed = round_shift(x_squared * x_q24, 24);
+    int64_t scaled_x_cubed = round_shift(750193 * x_cubed, 24); // 0.044715 * x^3, 0.044715 = 750193 in Q24
+    int64_t tanh_input = x_q24 + scaled_x_cubed; // x + 0.044715 * x^3
+    int64_t new_tanh = round_shift(13386282 * tanh_input, 24); //  0.7978845608 * (x + 0.044715 * x^3),  0.7978845608 = 13386282 in Q24
 
-    // Convert Q8 input to Q24.
-    int64_t x_q24 = (int64_t)x_q8 * 65536;
+    // Look up tanh
+    int64_t abs_tanh;
+    if (new_tanh < 0) {
+        abs_tanh = -new_tanh;
+    } else {
+        abs_tanh = new_tanh;
+    }
 
-    // Calculate x^2 and x^3 in Q24.
-    int64_t x2_q24 =
-        round_shift_away(x_q24 * x_q24, 24);
+    // Each LUT interval is 1/16 which equals 2^20 in Q24
+    int64_t lut_index = abs_tanh >> 20;
+    int64_t lut_remainder = abs_tanh & ((1 << 20) - 1); // - 1 to get the 20 lower bits
 
-    int64_t x3_q24 =
-        round_shift_away(x2_q24 * x_q24, 24);
+    int32_t tanh_value;
+    if (lut_index >= 64) {
+        tanh_value = gelu_tanh_lut_q15[64];
+    } else {
+        int32_t lower_value = gelu_tanh_lut_q15[lut_index];
+        int32_t upper_value = gelu_tanh_lut_q15[lut_index + 1];
+        // Interpolate between two LUT values based on how far input falls between them
+        tanh_value = lower_value + (int32_t) round_shift((int64_t)(upper_value - lower_value) * lut_remainder, 20);
+    }
 
-    // Q24 representation of 0.044715.
-    const int64_t coeff_0044715_q24 = 750193;
+    if (new_tanh < 0)
+        tanh_value = -tanh_value;
 
-    // Q24 representation of sqrt(2/pi).
-    const int64_t coeff_sqrt_2_over_pi_q24 = 13386282;
+    return (int32_t) round_shift((int64_t) x * (32768 + tanh_value), 16); // 0.5 * x * result from tanh, 0.5 = 32768 in Q24
+}
 
-    // Calculate x + 0.044715 * x^3.
-    int64_t cubic_term_q24 =
-        round_shift_away(coeff_0044715_q24 * x3_q24, 24);
+__attribute__((noinline))
+int32_t gelu_custom(int32_t x) {
+    int32_t result;
+    __asm__ volatile (
+        ".insn r 0x0b, 1, 0, %0, %1, x0"
+        : "=r"(result) : "r"(x));
+    return result;
+}
 
-    int64_t inner_q24 = x_q24 + cubic_term_q24;
-
-    // Calculate sqrt(2/pi) * (x + 0.044715 * x^3).
-    int64_t z_q24 =
-        round_shift_away(coeff_sqrt_2_over_pi_q24 * inner_q24, 24);
-
-    // Approximate tanh(z) in Q15.
-    int32_t tanh_q15 = gelu_tanh_q15(z_q24);
-
-    // GELU(x) = x * (1 + tanh(z)) / 2.
-    //
-    // (32768 + tanh_q15) represents (1 + tanh(z)) in Q15.
-    int64_t numerator =
-        (int64_t)x_q8 * (32768 + tanh_q15);
-
-    // Convert the result back to Q8.
-    return (int32_t)round_shift_away(numerator, 16);
+// GELU reference used to validate the baseline implementation
+float gelu_ref(float x) {
+    return 0.5f * x * (1.0f + tanhf(0.7978845608f * (x + 0.044715f * x * x * x)));
 }

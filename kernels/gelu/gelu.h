@@ -4,19 +4,18 @@
 
 #include <stdint.h>
 
-// GELU input and output use signed Q8 fixed-point format.
-// A real value is represented as value * 256.
-//
-// Example:
-//   1.0  = 256
-//  -1.0  = -256
-//
-// Returns the GELU result in the same Q8 format.
+// GELU approximation using tanh:
+// GELU(x) = 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
 
-// Software GELU implementation.
-int32_t gelu_baseline(int32_t x_q8);
+// Fixed-point representation: signed 32-bit integers scaled by 256 (8 fractional bits).
 
-// Custom-instruction GELU implementation.
-int32_t gelu_custom(int32_t x_q8);
+// GELU using software fixed-point arithmetic.
+int32_t gelu_baseline(int32_t x);
+
+// Same result using the custom GELU instruction.
+int32_t gelu_custom(int32_t x);
+
+// Floating-point GELU reference used for accuracy comparisons.
+float gelu_ref(float x);
 
 #endif
