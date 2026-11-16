@@ -32,6 +32,9 @@ for f in "$PLUGINS"/*.cc; do
   cp "$f" "$SRC/customext/$name"
   printf '\t%s \\\n' "$name" >> "$MK"
 done
+# Copy the shared GELU lookup table for the Spike extension.
+cp "$ROOT/kernels/gelu/gelu_lut.h" "$SRC/customext/gelu_lut.h"
+
 { echo; echo "customext_install_shared_lib = yes"; } >> "$MK"
 
 # 3. Configure, build, install
