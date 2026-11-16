@@ -10,7 +10,6 @@ python3 tests/gen_gelu_vectors.py > /dev/null
 ./scripts/run.sh gelu_test gelu
 ./scripts/run.sh bench_gelu gelu
 python3 scripts/analyze.py bench_gelu gelu_baseline gelu_custom > build/bench_gelu_counts.csv
-PYTHON=".venv/bin/python"
-"$PYTHON" scripts/model.py bench_gelu gelu_baseline gelu_custom gelu
-"$PYTHON" scripts/plots.py bench_gelu GELU gelu
+python3 scripts/model.py bench_gelu gelu_baseline gelu_custom gelu
+python3 scripts/plots.py bench_gelu GELU gelu
 echo "results: results/bench_gelu_results.csv, plots: results/plots/"
