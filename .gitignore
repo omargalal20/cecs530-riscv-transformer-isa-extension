@@ -1,3 +1,4 @@
+
 # OS / editors
 .DS_Store
 Thumbs.db
@@ -10,6 +11,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+.env
 
 # Build output and local installs (regenerate with scripts)
 build/
@@ -25,4 +27,5 @@ results/traces/
 *.vcd
 *.fst
 
-.env
+# Generated test vectors
+tests/vectors/gelu_vectors.h
