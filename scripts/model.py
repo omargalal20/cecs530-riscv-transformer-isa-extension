@@ -84,7 +84,8 @@ def main():
     if not random_cases:
         sys.exit("no random cases found for sensitivity analysis")
 
-    big = max(random_cases, key=lambda c: abs(c[0]) if mnem == "gelu" else c[0])[1]
+    # DOT4: largest n. GELU: the input with the most baseline instructions (full table path).
+    big = max(random_cases, key=lambda c: int(c[1][0]["total"]) if mnem == "gelu" else c[0])[1]
 
     with open(f"results/{name}_sensitivity.csv", "w", newline="") as f:
         sw = csv.writer(f, lineterminator="\n")

@@ -69,7 +69,7 @@ Two instructions, both in the `custom-0` slot (`0x0B`, R-type).
 
 **Simulator.** [Spike](https://github.com/riscv-software-src/riscv-isa-sim), pinned to commit `4c6a9bc` so all three of us build the same code. Spike is a functional simulator: it runs programs correctly but has no timing model. Its documented way to add an instruction is a behavior file plus an opcode entry in the Spike source tree [5]. Spike can also load instructions from a shared library with `--extlib`, which would let us leave Spike unmodified. We use the plugin route: our instructions live in `patches/riscv-isa-sim/customext/` and `scripts/setup.sh` builds them into a plugin library that Spike loads with `--extlib` and `--extension`.
 
-**Cycle model.** Cycles are modeled, not measured: cycles = Σ (instruction count × assumed latency per instruction class). The latency table will live in `bench/`. We sweep the custom instruction's latency (for example 1 to 4 cycles) to show how sensitive the speedup is. Whether a modeled cycle count is acceptable is being confirmed with the instructor.
+**Cycle model.** Cycles are modeled, not measured: cycles = Σ (instruction count × assumed latency per instruction class). One latency table (`model/latencies.json`, based on the OpenHW CV32E40P core) is used for both the baseline and the custom kernels, which the instructor approved. The latency of each custom instruction is an assumption, so we sweep it: `dot4` from 1 to 8 cycles and `gelu` from 1 to 64 cycles. Even at 64 cycles the GELU instruction is still about 2x faster than the software baseline.
 
 **Fair baseline.** The baseline is compiled with a reasonable optimization level and compared against loop-unrolled variants, so the speedup is not inflated.
 
@@ -96,7 +96,7 @@ Two instructions, both in the `custom-0` slot (`0x0B`, R-type).
 ├── runtime/     bare-metal startup, linker script, console helpers
 ├── kernels/     dot/ and gelu/: baseline and custom versions
 ├── bench/       benchmark programs (bench_dot.c, bench_gelu.c)
-├── tests/       Python reference and test-vector generators, directed assembly tests
+├── tests/       test-vector generator, float64 accuracy check, directed assembly tests
 ├── patches/     Spike plugin sources (dot4.cc, gelu.cc, gelu_lut.h)
 ├── model/       cycle-cost table (latencies.json)
 ├── scripts/     setup, build, run, analyze, model and plot scripts
@@ -149,7 +149,7 @@ What the script does: builds the kernels, runs them on Spike with the DOT4 plugi
 ./scripts/run_gelu.sh
 ```
 
-Expect 80 lines ending in `PASS` and `Total cases: 80 Failures: 0`, then `results: results/bench_gelu_results.csv, plots: results/plots/gelu/`. Each line shows the input, the expected value, the baseline output and the custom output (all Q8 integers). To check accuracy against float64 GELU, compare `gelu_q8(q) / 256` from `tests/gen_gelu_vectors.py` with the exact formula for every `q` in [-1536, 1536].
+Expect 80 lines ending in `PASS` and `Total cases: 80 Failures: 0`, then `results: results/bench_gelu_results.csv, plots: results/plots/gelu/`. Each line shows the input, the expected value, the baseline output and the custom output (all Q8 integers). The script also runs `tests/gelu_accuracy.py`, which compiles `kernels/gelu/gelu.c` on the host and compares it with a float64 GELU for every Q8 input in [-1536, 1536]. The report is saved to `results/gelu_accuracy.txt`.
 
 ### 6. Build and run your own program
 
@@ -189,21 +189,24 @@ Populated as runs complete. Full DOT4 results for all sizes are in `results/benc
 | GELU (Q8) | baseline | 64 random inputs, average | 113.7 | 120.0 | 1.00 | yes |
 | GELU (Q8) | custom (`gelu`, 8-cycle assumed) | 64 random inputs, average | 2.0 | 10.0 | 12.0 | yes |
 
-GELU accuracy: over every Q8 input in [-1536, 1536] (3073 values), the largest error against float64 GELU is 0.0021 (about half a Q8 step, at x = -1.13) and the mean error is 0.0006. The GELU latency of 8 cycles is an assumption, so `results/bench_gelu_sensitivity.csv` sweeps it from 1 to 64 cycles.
+Across the 64 random inputs the modeled speedup ranges from 8.6x (inputs where `tanh` is saturated, 83 to 88 baseline instructions) to 13.8x (full table lookup, 127 baseline instructions). Baseline GELU costs 4 to 7 instructions for \|x\| >= 4 and 83 to 127 otherwise; the custom call is always 2 (`gelu` plus `ret`).
+
+GELU accuracy (`results/gelu_accuracy.txt`): over every Q8 input in [-1536, 1536] (3073 values), the largest error against float64 GELU is 0.0021 (about half a Q8 step) and the mean error is 0.0006. The GELU latency of 8 cycles is an assumption, so `results/bench_gelu_sensitivity.csv` sweeps it from 1 to 64 cycles.
 
 ## Project Status
 
-Project due **Nov 20, 2026**. Presentations on **Nov 21** and **Dec 5, 2026**.
+Report due **Nov 20, 2026**. Presentation on **Nov 21, 2026**.
 
 | Milestone | Status |
 |---|---|
 | Topic selected, team registered | Complete |
 | Drive, repository and one-pager | Complete |
 | Toolchain and Spike build verified | Complete |
-| Baseline kernel running on Spike | Complete (DOT product) |
+| Baseline kernels running on Spike | Complete (DOT product and GELU) |
 | Custom instruction running in Spike | Complete (DOT4 and GELU) |
-| Cycle model and experiments | Complete for both primitives; final run before submission |
-| Report and presentation | Not started |
+| Cycle model and experiments | Complete for both primitives |
+| GELU accuracy check | Complete (`results/gelu_accuracy.txt`) |
+| Report and presentation | In progress |
 
 ## Decisions
 
