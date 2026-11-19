@@ -19,7 +19,7 @@ This repository contains the code, experiments and documentation for designing c
 4. Measure instruction count, modeled cycles and speedup across input sizes.
 5. Explain from a computer-architecture view where the gain comes from and what it costs.
 
-**Expected outcome (hypotheses, not results).** A hand count for 4 int8 elements gives 28 baseline instructions (19 with 4x loop unrolling) against 6 with a fused dot-product instruction. Measured numbers will replace these. The gain for GELU depends on the data type and on how good the baseline approximation is, so it may be smaller.
+**Hypothesis and outcome.** A hand count for 4 int8 elements gave 28 baseline instructions (19 with 4x loop unrolling) against 6 with a fused dot-product instruction. Measured: 28.0 and 19.0 per 4 elements for the two baselines, and 7.0 with `dot4` (the loop adds one more instruction than the hand count). We expected the GELU gain to be smaller because it depends on the baseline approximation; it was larger (12x on average), because the software `tanh` approximation costs about 114 instructions per value and the custom instruction replaces all of it.
 
 ## Background
 
@@ -71,7 +71,7 @@ Two instructions, both in the `custom-0` slot (`0x0B`, R-type).
 
 **Cycle model.** Cycles are modeled, not measured: cycles = Σ (instruction count × assumed latency per instruction class). One latency table (`model/latencies.json`, based on the OpenHW CV32E40P core) is used for both the baseline and the custom kernels, which the instructor approved. The latency of each custom instruction is an assumption, so we sweep it: `dot4` from 1 to 8 cycles and `gelu` from 1 to 64 cycles. Even at 64 cycles the GELU instruction is still about 2x faster than the software baseline.
 
-**Fair baseline.** The baseline is compiled with a reasonable optimization level and compared against loop-unrolled variants, so the speedup is not inflated.
+**Fair baseline.** Both baselines are compiled with `-O2`. DOT4 is compared against the plain loop and against a 4x-unrolled loop (`dot_baseline_unroll4`), so the speedup is not inflated by loop overhead. GELU is compared against a fixed-point software implementation that uses the same table and rounding as the instruction.
 
 **Metrics.** Instruction count, modeled cycles, speedup per input size, and correctness against the Python reference.
 
@@ -95,7 +95,7 @@ Two instructions, both in the `custom-0` slot (`0x0B`, R-type).
 ├── .gitignore
 ├── runtime/     bare-metal startup, linker script, console helpers
 ├── kernels/     dot/ and gelu/: baseline and custom versions
-├── bench/       benchmark programs (bench_dot.c, bench_gelu.c)
+├── bench/       benchmark programs (bench_dot.c, bench_dot_unroll.c, bench_gelu.c)
 ├── tests/       test-vector generator, float64 accuracy check, directed assembly tests
 ├── patches/     Spike plugin sources (dot4.cc, gelu.cc, gelu_lut.h)
 ├── model/       cycle-cost table (latencies.json)
@@ -191,7 +191,22 @@ All numbers come from `./scripts/run_dot.sh` and `./scripts/run_gelu.sh`. Cycles
 | 256 | 1797 → 458 | 2308 → 649 | 3.56x |
 | 1024 | 7173 → 1802 | 9220 → 2569 | 3.59x |
 
-The speedup falls from 3.99x to 2.25x as the assumed `dot4` latency goes from 1 to 8 cycles (n = 1024), so it holds up well. All six DOT4 test cases match the Python reference.
+The speedup falls from 3.99x to 2.25x as the assumed `dot4` latency goes from 1 to 8 cycles (n = 1024). All six DOT4 test cases match the Python reference.
+
+**Against a stronger baseline.** Unrolling the software loop 4x removes most of the loop overhead (4872 instructions instead of 7173 at n = 1024), so the gain from `dot4` is smaller:
+
+| Vector length n | Instructions: unrolled baseline → DOT4 | Modeled cycles: unrolled baseline → DOT4 | Speedup |
+|---|---|---|---|
+| 16 | 84 → 38 | 91 → 49 | 1.86x |
+| 64 | 312 → 122 | 343 → 169 | 2.03x |
+| 256 | 1224 → 458 | 1351 → 649 | 2.08x |
+| 1024 | 4872 → 1802 | 5383 → 2569 | 2.10x |
+
+The speedup falls from 2.33x to 1.31x for a `dot4` latency of 1 to 8 cycles. So the honest DOT4 result is about 2.1x against an optimized baseline (3.6x against the simple loop), and it stays above 1x for every latency we tried. Data: `results/dot4/bench_dot_unroll_*.csv`, plots: `results/dot4/plots/bench_dot_unroll_*.png`.
+
+| Instructions per call (unrolled baseline) | Speedup vs input size (unrolled baseline) |
+|---|---|
+| ![DOT4 vs unrolled, instructions](results/dot4/plots/bench_dot_unroll_instructions.png) | ![DOT4 vs unrolled, speedup](results/dot4/plots/bench_dot_unroll_speedup.png) |
 
 | Instructions per call | Speedup vs input size |
 |---|---|

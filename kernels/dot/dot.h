@@ -5,6 +5,9 @@
 // int8 dot product: sum of a[i] * b[i], accumulated in int32.
 int32_t dot_baseline(const int8_t *a, const int8_t *b, int n);
 
+// Same result, loop unrolled 4x (n must be a multiple of 4). A stronger baseline.
+int32_t dot_baseline_unroll4(const int8_t *a, const int8_t *b, int n);
+
 // Same result using the custom DOT4 instruction. n must be a multiple of 4,
 // and a and b must be 4-byte aligned.
 int32_t dot_custom(const int8_t *a, const int8_t *b, int n);

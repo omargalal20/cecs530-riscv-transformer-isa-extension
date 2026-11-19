@@ -12,6 +12,21 @@ int32_t dot_baseline(const int8_t *a, const int8_t *b, int n)
     return acc;
 }
 
+// Fairer baseline: the same loop unrolled 4x (four products per iteration), so the
+// loop overhead is shared. n must be a multiple of 4.
+__attribute__((noinline))
+int32_t dot_baseline_unroll4(const int8_t *a, const int8_t *b, int n)
+{
+    int32_t acc = 0;
+    for (int i = 0; i < n; i += 4) {
+        acc += (int32_t)a[i]     * (int32_t)b[i];
+        acc += (int32_t)a[i + 1] * (int32_t)b[i + 1];
+        acc += (int32_t)a[i + 2] * (int32_t)b[i + 2];
+        acc += (int32_t)a[i + 3] * (int32_t)b[i + 3];
+    }
+    return acc;
+}
+
 typedef uint32_t __attribute__((may_alias)) word_t;
 
 __attribute__((noinline))
