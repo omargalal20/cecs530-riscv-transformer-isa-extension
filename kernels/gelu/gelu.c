@@ -61,6 +61,7 @@ int32_t gelu_baseline(int32_t x) {
     return (int32_t) round_shift((int64_t) x * (32768 + tanh_value), 16); // 0.5 * x * result from tanh, 0.5 = 32768 in Q24
 }
 
+#ifdef __riscv
 __attribute__((noinline))
 int32_t gelu_custom(int32_t x) {
     int32_t result;
@@ -69,3 +70,4 @@ int32_t gelu_custom(int32_t x) {
         : "=r"(result) : "r"(x));
     return result;
 }
+#endif
