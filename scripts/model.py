@@ -69,7 +69,7 @@ def main():
     if len(pairs) != len(names):
         sys.exit(f"case/count mismatch: {len(names)} benchmark cases, {len(pairs)} instruction-count pairs")
 
-    with open(f"results/{name}_results.csv", "w", newline="") as out:
+    with open(f"results/{mnem}/{name}_results.csv", "w", newline="") as out:
         w = csv.writer(out, lineterminator="\n")
         w.writerow(["case", "n", "base_instr", "custom_instr", "instr_ratio",
                     "base_cycles", "custom_cycles", "speedup"])
@@ -84,9 +84,10 @@ def main():
     if not random_cases:
         sys.exit("no random cases found for sensitivity analysis")
 
-    big = max(random_cases, key=lambda c: abs(c[0]) if mnem == "gelu" else c[0])[1]
+    # DOT4: largest n. GELU: the input with the most baseline instructions (full table path).
+    big = max(random_cases, key=lambda c: int(c[1][0]["total"]) if mnem == "gelu" else c[0])[1]
 
-    with open(f"results/{name}_sensitivity.csv", "w", newline="") as f:
+    with open(f"results/{mnem}/{name}_sensitivity.csv", "w", newline="") as f:
         sw = csv.writer(f, lineterminator="\n")
         sw.writerow([f"{mnem}_latency_cycles", "speedup"])
         for lat in SWEEPS.get(mnem, range(1, 9)):

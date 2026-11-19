@@ -4,7 +4,7 @@
 
 This repository contains the code, experiments and documentation for designing custom RISC-V instructions that accelerate Transformer operations. We add the instructions to the Spike simulator, run the same kernels with and without them, and compare instruction count and modeled execution cycles.
 
-> **Status: early setup.** Toolchain and simulator setup are being verified. Sections marked **TBD** are open team decisions or not yet built. See [Project Status](#project-status).
+> **Status:** the two primitives are locked: **DOT4** and **GELU**. Both are implemented in Spike and run with `./scripts/run_dot.sh` and `./scripts/run_gelu.sh`. See [Project Status](#project-status).
 
 ---
 
@@ -40,29 +40,28 @@ This repository contains the code, experiments and documentation for designing c
 |---|---|---|
 | **Dot product** | Attention scores and every matrix multiply | Multiply pairs of numbers, then sum them |
 | **GELU** | Feed-forward block | A smooth activation applied to each value |
-| **LayerNorm** | Before or after each block | Rescale each vector to mean 0 and variance 1, then apply a learned scale and shift |
 
-Standard RISC-V has no instruction for these, so each becomes a long chain of simple ones. A dot product needs 7 instructions per element (2 loads, multiply, add, 2 pointer updates, branch). GELU needs `tanh` or `erf`, which have no instruction. LayerNorm needs a square root and a division.
+Standard RISC-V has no instruction for these, so each becomes a long chain of simple ones. A dot product needs 7 instructions per element (2 loads, multiply, add, 2 pointer updates, branch). GELU needs `tanh` or `erf`, which have no instruction.
 
 ### Related hardware
 
 Fused 8-bit dot products already exist elsewhere: Arm `SDOT`/`UDOT`, x86 `VPDPBUSD` (VNNI) and NVIDIA `dp4a` all multiply four 8-bit pairs and accumulate into 32 bits [7–9]. RISC-V has a vector draft, `Zvdot4a8i` (formerly `Zvqdotq`), whose ratification we could not confirm [10]. Our instructions are scalar and live in the `custom-0` slot. The contribution is the implementation and the measurements.
 
-## Candidate Instructions
+## Custom Instructions
 
-| ID | Instruction | Primitive | Status |
+Two instructions, both in the `custom-0` slot (`0x0B`, R-type).
+
+| Instruction | funct3 | Primitive | What it does |
 |---|---|---|---|
-| `dot4` | int8 dot-product-accumulate over 4 packed pairs (accumulate form being designed) | Dot product | Leaning primary |
-| `gelu` | GELU approximation (lookup table or piecewise-linear) | GELU | Leaning primary, data type **TBD** |
-| `rsqrt` | Reciprocal square root | LayerNorm | Fallback or stretch |
-| `requant` | int32 → int8: scale, shift, clamp | Quantization | Optional companion to `dot4` |
+| `dot4 rd, rs1, rs2` | 0 | Dot product | `rd += sum of 4 signed int8 products` from the bytes packed in `rs1` and `rs2` |
+| `gelu rd, rs1` | 1 | GELU | `rd = GELU(rs1)` for a Q8 fixed-point input, using a 65-entry Q15 `tanh` table with linear interpolation |
 
-The brief requires at least two instructions. Fallback set: dot product, GELU and LayerNorm.
+**GELU design.** Values are signed Q8 integers (real value = integer / 256). The kernel computes `0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))` in integer arithmetic. `tanh` comes from a 65-entry Q15 table covering 0 to 4 in steps of 1/16, with linear interpolation, odd symmetry for negative inputs, and clamping beyond 4. Inputs of 4.0 or more return `x`, and inputs of -4.0 or less return 0. The software baseline (`kernels/gelu/gelu.c`) and the plugin (`patches/riscv-isa-sim/customext/gelu.cc`) use the same table and rounding, so their outputs are bit-identical.
 
 ## Methodology
 
 ```
- kernel.c ──► GCC (RV32IMF) ──► program.elf ──► Spike (+ our instruction) ──► instruction counts ──► cost model (Python) ──► cycles, speedup, graphs
+ kernel.c ──► GCC (RV32IM integer code) ──► program.elf ──► Spike (+ our instruction) ──► instruction counts ──► cost model (Python) ──► cycles, speedup, graphs
  (baseline | custom)
 
  Python reference ──► expected outputs ──► compared with the program's output (correctness)
@@ -70,7 +69,7 @@ The brief requires at least two instructions. Fallback set: dot product, GELU an
 
 **Simulator.** [Spike](https://github.com/riscv-software-src/riscv-isa-sim), pinned to commit `4c6a9bc` so all three of us build the same code. Spike is a functional simulator: it runs programs correctly but has no timing model. Its documented way to add an instruction is a behavior file plus an opcode entry in the Spike source tree [5]. Spike can also load instructions from a shared library with `--extlib`, which would let us leave Spike unmodified. We use the plugin route: our instructions live in `patches/riscv-isa-sim/customext/` and `scripts/setup.sh` builds them into a plugin library that Spike loads with `--extlib` and `--extension`.
 
-**Cycle model.** Cycles are modeled, not measured: cycles = Σ (instruction count × assumed latency per instruction class). The latency table will live in `bench/`. We sweep the custom instruction's latency (for example 1 to 4 cycles) to show how sensitive the speedup is. Whether a modeled cycle count is acceptable is being confirmed with the instructor.
+**Cycle model.** Cycles are modeled, not measured: cycles = Σ (instruction count × assumed latency per instruction class). One latency table (`model/latencies.json`, based on the OpenHW CV32E40P core) is used for both the baseline and the custom kernels, which the instructor approved. The latency of each custom instruction is an assumption, so we sweep it: `dot4` from 1 to 8 cycles and `gelu` from 1 to 64 cycles. Even at 64 cycles the GELU instruction is still about 2x faster than the software baseline.
 
 **Fair baseline.** The baseline is compiled with a reasonable optimization level and compared against loop-unrolled variants, so the speedup is not inflated.
 
@@ -81,12 +80,12 @@ The brief requires at least two instructions. Fallback set: dot product, GELU an
 | Item | Value |
 |---|---|
 | Baseline ISA | RV32IM |
-| Compiler | GCC 13.2.0 for RISC-V bare metal (`gcc-riscv64-unknown-elf`, Ubuntu 24.04). Flags and optimization level **TBD** |
+| Compiler | GCC 13.2.0 for RISC-V bare metal (`gcc-riscv64-unknown-elf`, Ubuntu 24.04). Flags: `-O2 -ffp-contract=off -ffreestanding -nostdlib` (see `scripts/build.sh`) |
 | Simulator | Spike, commit `4c6a9bc` |
 | Custom opcode | `custom-0` (`0x0B`), R-type, assembled with `.insn` [6] |
-| Data type | **TBD** |
-| Kernels | Dot product, GELU (required); LayerNorm (fallback) |
-| Input sizes | **TBD** |
+| Data type | DOT4: int8 inputs, int32 accumulator. GELU: signed Q8 int32, Q15 `tanh` table |
+| Kernels | Dot product and GELU, each as baseline and custom |
+| Input sizes | DOT4: vector lengths up to 1024. GELU: 16 directed inputs and 64 random inputs in [-1023, 1023] (Q8) |
 
 ## Repository Structure
 
@@ -94,15 +93,14 @@ The brief requires at least two instructions. Fallback set: dot product, GELU an
 .
 ├── README.md
 ├── .gitignore
-├── docs/        (planned) ISA spec, design decisions, setup notes
-├── isa/         (planned) instruction definitions and encodings
-├── runtime/     (planned) bare-metal startup, linker script, console and counter helpers
-├── kernels/     (planned) one folder per primitive: baseline and custom versions
-├── sim/         (planned) Spike instruction plugin, if we use the plugin route
-├── tests/       (planned) Python reference and test-vector generator
-├── bench/       (planned) benchmark programs and the cycle model
-├── scripts/     (planned) setup.sh, build and run helpers
-├── results/     (planned) summary CSVs and figures
+├── runtime/     bare-metal startup, linker script, console helpers
+├── kernels/     dot/ and gelu/: baseline and custom versions
+├── bench/       benchmark programs (bench_dot.c, bench_gelu.c)
+├── tests/       test-vector generator, float64 accuracy check, directed assembly tests
+├── patches/     Spike plugin sources (dot4.cc, gelu.cc, gelu_lut.h)
+├── model/       cycle-cost table (latencies.json)
+├── scripts/     setup, build, run, analyze, model and plot scripts
+├── results/     dot4/ and gelu/: result CSVs and plots/ for each primitive (gelu/ also has the accuracy report)
 └── third_party/ , build/   Generated locally, not tracked by git
 ```
 
@@ -141,11 +139,19 @@ This fetches Spike at the pinned commit `4c6a9bc`, copies the plugin sources fro
 ./scripts/run_dot.sh
 ```
 
-Expect six `PASS` lines, then `results: results/bench_dot_results.csv, plots: results/plots/`. The row for n=1024 should read `rand_1024,1024,7173,1802,3.981,9220,2569,3.589`.
+Expect six `PASS` lines, then `results: results/dot4/bench_dot_results.csv, plots: results/dot4/plots/`. The row for n=1024 should read `rand_1024,1024,7173,1802,3.981,9220,2569,3.589`.
 
 What the script does: builds the kernels, runs them on Spike with the DOT4 plugin, counts executed instructions from Spike's trace (`scripts/analyze.py`), applies the cost model (`scripts/model.py`, table in `model/latencies.json`) and draws the plots (`scripts/plots.py`).
 
-### 5. Build and run your own program
+### 5. Run the GELU experiment
+
+```bash
+./scripts/run_gelu.sh
+```
+
+Expect 80 lines ending in `PASS` and `Total cases: 80 Failures: 0`, then `results: results/gelu/bench_gelu_results.csv, plots: results/gelu/plots/`. Each line shows the input, the expected value, the baseline output and the custom output (all Q8 integers). The script also runs `tests/gelu_accuracy.py`, which compiles `kernels/gelu/gelu.c` on the host and compares it with a float64 GELU for every Q8 input in [-1536, 1536]. The report is saved to `results/gelu/gelu_accuracy.txt`.
+
+### 6. Build and run your own program
 
 ```bash
 ./scripts/build.sh <name> <sources.c ...>     # writes build/<name>.elf
@@ -174,38 +180,66 @@ Pass one extension name per plugin, for example `./scripts/run.sh gelu_test dot4
 
 ## Results
 
-Populated as runs complete. Full DOT4 results for all sizes are in `results/bench_dot_results.csv`.
+All numbers come from `./scripts/run_dot.sh` and `./scripts/run_gelu.sh`. Cycles are modeled (see Methodology). Raw data is in `results/dot4/` and `results/gelu/`; each folder has the CSVs and a `plots/` folder.
 
-| Kernel | Variant | Input size | Instructions | Modeled cycles | Speedup vs baseline | Correct |
-|---|---|---|---|---|---|---|
-| dot (int8) | baseline | 1024 | 7173 | 9220 | 1.00 | yes |
-| dot (int8) | custom (DOT4, 2-cycle assumed) | 1024 | 1802 | 2569 | 3.59 | yes |
-| GELU | baseline | — | — | — | 1.00 | — |
-| GELU | custom | — | — | — | — | — |
+### DOT4 (int8 dot product, 2-cycle `dot4` assumed)
+
+| Vector length n | Instructions: baseline → DOT4 | Modeled cycles: baseline → DOT4 | Speedup |
+|---|---|---|---|
+| 16 | 117 → 38 | 148 → 49 | 3.02x |
+| 64 | 453 → 122 | 580 → 169 | 3.43x |
+| 256 | 1797 → 458 | 2308 → 649 | 3.56x |
+| 1024 | 7173 → 1802 | 9220 → 2569 | 3.59x |
+
+The speedup falls from 3.99x to 2.25x as the assumed `dot4` latency goes from 1 to 8 cycles (n = 1024), so it holds up well. All six DOT4 test cases match the Python reference.
+
+| Instructions per call | Speedup vs input size |
+|---|---|
+| ![DOT4 instructions](results/dot4/plots/bench_dot_instructions.png) | ![DOT4 speedup](results/dot4/plots/bench_dot_speedup.png) |
+| ![DOT4 instruction mix](results/dot4/plots/bench_dot_mix.png) | ![DOT4 latency sensitivity](results/dot4/plots/bench_dot_sensitivity.png) |
+
+### GELU (Q8 fixed point, 8-cycle `gelu` assumed)
+
+| Input path | Baseline instructions | Custom instructions | Speedup |
+|---|---|---|---|
+| x <= -4 or x >= 4 (clamped, early exit) | 7 (x <= -4), 4 (x >= 4) | 2 | 1.0x and 0.7x |
+| Table saturated (inputs near ±4) | 83 to 88 | 2 | 8.6x to 9.7x |
+| Full table lookup and interpolation | 118 to 127 | 2 | 12.0x to 13.8x |
+| Average over 64 random inputs | 113.7 | 2.0 | 12.0x (120.0 → 10.0 cycles) |
+
+The custom call is always 2 instructions (`gelu` plus `ret`). The one case where `gelu` does not help is the clamped input x >= 4: the software baseline exits after 4 instructions (7 cycles), so with an 8-cycle `gelu` the custom version is slightly slower (0.7x). The 16 directed cases include these two clamped inputs; the 64 random inputs (in [-4, 4)) do not. Baseline and custom return identical outputs on all 80 test inputs (16 directed, 64 random). The speedup falls from 46x at 1 cycle to 2.1x at 64 cycles (full-table input), so `gelu` stays faster across the whole sweep.
+
+| Instructions per call | Speedup across inputs |
+|---|---|
+| ![GELU instructions](results/gelu/plots/bench_gelu_instructions.png) | ![GELU speedup](results/gelu/plots/bench_gelu_speedup.png) |
+| ![GELU instruction mix](results/gelu/plots/bench_gelu_mix.png) | ![GELU latency sensitivity](results/gelu/plots/bench_gelu_sensitivity.png) |
+
+**GELU accuracy** (`results/gelu/gelu_accuracy.txt`, from `tests/gelu_accuracy.py`): over every Q8 input in [-1536, 1536] (3073 values), the largest error against a float64 GELU is 0.0021 (about half a Q8 step) and the mean error is 0.0006.
 
 ## Project Status
 
-Project due **Nov 20, 2026**. Presentations on **Nov 21** and **Dec 5, 2026**.
+Report due **Nov 20, 2026**. Presentation on **Nov 21, 2026**.
 
 | Milestone | Status |
 |---|---|
 | Topic selected, team registered | Complete |
 | Drive, repository and one-pager | Complete |
 | Toolchain and Spike build verified | Complete |
-| Baseline kernel running on Spike | Complete (DOT product) |
-| Custom instruction running in Spike | Complete (DOT4); GELU in progress |
-| Cycle model and experiments | Not started |
-| Report and presentation | Not started |
+| Baseline kernels running on Spike | Complete (DOT product and GELU) |
+| Custom instruction running in Spike | Complete (DOT4 and GELU) |
+| Cycle model and experiments | Complete for both primitives |
+| GELU accuracy check | Complete (`results/gelu/gelu_accuracy.txt`) |
+| Report and presentation | In progress |
 
-## Open Decisions
+## Decisions
 
-| Decision | Options | Status |
-|---|---|---|
-| Data type | int8 only, or also fixed-point/float (needed for a fair GELU baseline) | **TBD** |
-| Spike route | Source-tree change, `--extlib` plugin, or PySpike [11] | **TBD** (plugin route being tried first) |
-| Final primitives | `dot4` + `gelu`, or a different pair; LayerNorm as stretch | **TBD** |
-| Cycle measurement | Modeled cycles acceptable? | Pending instructor |
-| Baseline compiler flags | `-O2` vs `-O3`, unrolling | **TBD** |
+| Decision | Outcome |
+|---|---|
+| Primitives | `dot4` and `gelu` (as in the course brief) |
+| Data type | DOT4: int8 with int32 accumulator. GELU: Q8 fixed point with a Q15 `tanh` table (needed for a fair integer baseline) |
+| Spike route | `--extlib` plugin, built by `scripts/setup.sh` |
+| Cycle measurement | Modeled cycles, one latency table for baseline and custom (approved by the instructor) |
+| Compiler flags | `-O2 -ffp-contract=off` for all kernels |
 
 ## Working Together
 
