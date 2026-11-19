@@ -10,4 +10,4 @@ python3 tests/gen_dot_vectors.py > /dev/null
 python3 scripts/analyze.py bench_dot dot_baseline dot_custom > build/bench_dot_counts.csv
 python3 scripts/model.py bench_dot dot_baseline dot_custom dot4
 python3 scripts/plots.py bench_dot DOT4 dot4
-echo "results: results/bench_dot_results.csv, plots: results/plots/"
+echo "results: results/bench_dot_results.csv, plots: results/plots/dot4/"
