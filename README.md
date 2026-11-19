@@ -26,7 +26,7 @@ This repository contains the code, experiments and documentation for designing c
 | Term | Meaning |
 |---|---|
 | **ISA** | Instruction Set Architecture: the list of instructions a processor understands |
-| **RV32I** | RISC-V base integer ISA, 32-bit, 40 instructions |
+| **RV32I** | RISC-V base integer ISA, 32-bit, 40 instructions [3] |
 | **M extension** | Adds multiply and divide. Our baseline is **RV32IM** (base + M) |
 | **ISA extension** | New instructions added on top of an ISA. Ours use the reserved `custom-0` opcode (`0x0B`) |
 | **Kernel** | A small program that does one operation, such as a dot product |
@@ -38,14 +38,14 @@ This repository contains the code, experiments and documentation for designing c
 
 | Primitive | Where it appears | What it computes |
 |---|---|---|
-| **Dot product** | Attention scores and every matrix multiply | Multiply pairs of numbers, then sum them |
-| **GELU** | Feed-forward block | A smooth activation applied to each value |
+| **Dot product** | Attention scores and every matrix multiply [1] | Multiply pairs of numbers, then sum them |
+| **GELU** | Feed-forward block [2] | A smooth activation applied to each value |
 
 Standard RISC-V has no instruction for these, so each becomes a long chain of simple ones. A dot product needs 7 instructions per element (2 loads, multiply, add, 2 pointer updates, branch). GELU needs `tanh` or `erf`, which have no instruction.
 
 ### Related hardware
 
-Fused 8-bit dot products already exist elsewhere: Arm `SDOT`/`UDOT`, x86 `VPDPBUSD` (VNNI) and NVIDIA `dp4a` all multiply four 8-bit pairs and accumulate into 32 bits [7–9]. RISC-V has a vector draft, `Zvdot4a8i` (formerly `Zvqdotq`), whose ratification we could not confirm [10]. Our instructions are scalar and live in the `custom-0` slot. The contribution is the implementation and the measurements.
+Fused 8-bit dot products already exist elsewhere: Arm `SDOT`/`UDOT`, x86 `VPDPBUSD` (VNNI) and NVIDIA `dp4a` all multiply four 8-bit pairs and accumulate into 32 bits [6–8]. RISC-V has a vector draft, `Zvdot4a8i` (formerly `Zvqdotq`), whose ratification we could not confirm [9]. Our instructions are scalar and live in the `custom-0` slot. The contribution is the implementation and the measurements.
 
 ## Custom Instructions
 
@@ -67,7 +67,7 @@ Two instructions, both in the `custom-0` slot (`0x0B`, R-type).
  Python reference ──► expected outputs ──► compared with the program's output (correctness)
 ```
 
-**Simulator.** [Spike](https://github.com/riscv-software-src/riscv-isa-sim), pinned to commit `4c6a9bc` so all three of us build the same code. Spike is a functional simulator: it runs programs correctly but has no timing model. Its documented way to add an instruction is a behavior file plus an opcode entry in the Spike source tree [5]. Spike can also load instructions from a shared library with `--extlib`, which would let us leave Spike unmodified. We use the plugin route: our instructions live in `patches/riscv-isa-sim/customext/` and `scripts/setup.sh` builds them into a plugin library that Spike loads with `--extlib` and `--extension`.
+**Simulator.** [Spike](https://github.com/riscv-software-src/riscv-isa-sim), pinned to commit `4c6a9bc` so all three of us build the same code. Spike is a functional simulator: it runs programs correctly but has no timing model. Its documented way to add an instruction is a behavior file plus an opcode entry in the Spike source tree [4]. Spike can also load instructions from a shared library with `--extlib`, which would let us leave Spike unmodified. We use the plugin route: our instructions live in `patches/riscv-isa-sim/customext/` and `scripts/setup.sh` builds them into a plugin library that Spike loads with `--extlib` and `--extension`.
 
 **Cycle model.** Cycles are modeled, not measured: cycles = Σ (instruction count × assumed latency per instruction class). One latency table (`model/latencies.json`, based on the OpenHW CV32E40P core) is used for both the baseline and the custom kernels, which the instructor approved. The latency of each custom instruction is an assumption, so we sweep it: `dot4` from 1 to 8 cycles and `gelu` from 1 to 64 cycles. Even at 64 cycles the GELU instruction is still about 2x faster than the software baseline.
 
@@ -82,7 +82,7 @@ Two instructions, both in the `custom-0` slot (`0x0B`, R-type).
 | Baseline ISA | RV32IM |
 | Compiler | GCC 13.2.0 for RISC-V bare metal (`gcc-riscv64-unknown-elf`, Ubuntu 24.04). Flags: `-O2 -ffp-contract=off -ffreestanding -nostdlib` (see `scripts/build.sh`) |
 | Simulator | Spike, commit `4c6a9bc` |
-| Custom opcode | `custom-0` (`0x0B`), R-type, assembled with `.insn` [6] |
+| Custom opcode | `custom-0` (`0x0B`), R-type, assembled with `.insn` [5] |
 | Data type | DOT4: int8 inputs, int32 accumulator. GELU: signed Q8 int32, Q15 `tanh` table |
 | Kernels | Dot product and GELU, each as baseline and custom |
 | Input sizes | DOT4: vector lengths up to 1024. GELU: 16 directed inputs and 64 random inputs in [-1023, 1023] (Q8) |
@@ -283,15 +283,13 @@ Report due **Nov 20, 2026**. Presentation on **Nov 21, 2026**.
 
 1. A. Vaswani et al., "Attention Is All You Need," arXiv:1706.03762, 2017.
 2. D. Hendrycks and K. Gimpel, "Gaussian Error Linear Units (GELUs)," arXiv:1606.08415.
-3. J. L. Ba, J. R. Kiros, and G. E. Hinton, "Layer Normalization," arXiv:1607.06450, 2016.
-4. [The RISC-V Instruction Set Manual, Volume I: Unprivileged ISA](https://docs.riscv.org/reference/isa/unpriv/rv32.html).
-5. [Spike, the RISC-V ISA Simulator](https://github.com/riscv-software-src/riscv-isa-sim) (README: "Simulating a New Instruction").
-6. [GNU assembler, RISC-V instruction formats (`.insn`)](https://www.sourceware.org/binutils/docs/as/RISC_002dV_002dFormats.html).
-7. [Arm, "Exploring the Arm dot product instructions"](https://developer.arm.com/community/arm-community-blogs/b/tools-software-ides-blog/posts/exploring-the-arm-dot-product-instructions).
-8. [WikiChip, AVX512 VNNI (`VPDPBUSD`)](https://en.wikichip.org/wiki/AVX512_VNNI).
-9. [NVIDIA `dp4a`, as described in the MLIR NVVM dialect discussion](https://lists.llvm.org/pipermail/mlir-commits/2025-May/107793.html).
-10. [RISC-V Vector Is Expanding (`Zvdot4a8i`)](https://fprox.substack.com/p/risc-v-vector-is-expanding).
-11. [PySpike: Python bindings for Spike](https://pypi.org/project/spike/).
+3. [The RISC-V Instruction Set Manual, Volume I: Unprivileged ISA](https://docs.riscv.org/reference/isa/unpriv/rv32.html).
+4. [Spike, the RISC-V ISA Simulator](https://github.com/riscv-software-src/riscv-isa-sim) (README: "Simulating a New Instruction").
+5. [GNU assembler, RISC-V instruction formats (`.insn`)](https://www.sourceware.org/binutils/docs/as/RISC_002dV_002dFormats.html).
+6. [Arm, "Exploring the Arm dot product instructions"](https://developer.arm.com/community/arm-community-blogs/b/tools-software-ides-blog/posts/exploring-the-arm-dot-product-instructions).
+7. [WikiChip, AVX512 VNNI (`VPDPBUSD`)](https://en.wikichip.org/wiki/AVX512_VNNI).
+8. [NVIDIA `dp4a`, as described in the MLIR NVVM dialect discussion](https://lists.llvm.org/pipermail/mlir-commits/2025-May/107793.html).
+9. [RISC-V Vector Is Expanding (`Zvdot4a8i`)](https://fprox.substack.com/p/risc-v-vector-is-expanding).
 
 ## Authors
 
