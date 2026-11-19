@@ -100,7 +100,7 @@ Two instructions, both in the `custom-0` slot (`0x0B`, R-type).
 ├── patches/     Spike plugin sources (dot4.cc, gelu.cc, gelu_lut.h)
 ├── model/       cycle-cost table (latencies.json)
 ├── scripts/     setup, build, run, analyze, model and plot scripts
-├── results/     summary CSVs and plots/dot4, plots/gelu
+├── results/     dot4/ and gelu/: result CSVs and plots/ for each primitive (gelu/ also has the accuracy report)
 └── third_party/ , build/   Generated locally, not tracked by git
 ```
 
@@ -139,7 +139,7 @@ This fetches Spike at the pinned commit `4c6a9bc`, copies the plugin sources fro
 ./scripts/run_dot.sh
 ```
 
-Expect six `PASS` lines, then `results: results/bench_dot_results.csv, plots: results/plots/dot4/`. The row for n=1024 should read `rand_1024,1024,7173,1802,3.981,9220,2569,3.589`.
+Expect six `PASS` lines, then `results: results/dot4/bench_dot_results.csv, plots: results/dot4/plots/`. The row for n=1024 should read `rand_1024,1024,7173,1802,3.981,9220,2569,3.589`.
 
 What the script does: builds the kernels, runs them on Spike with the DOT4 plugin, counts executed instructions from Spike's trace (`scripts/analyze.py`), applies the cost model (`scripts/model.py`, table in `model/latencies.json`) and draws the plots (`scripts/plots.py`).
 
@@ -149,7 +149,7 @@ What the script does: builds the kernels, runs them on Spike with the DOT4 plugi
 ./scripts/run_gelu.sh
 ```
 
-Expect 80 lines ending in `PASS` and `Total cases: 80 Failures: 0`, then `results: results/bench_gelu_results.csv, plots: results/plots/gelu/`. Each line shows the input, the expected value, the baseline output and the custom output (all Q8 integers). The script also runs `tests/gelu_accuracy.py`, which compiles `kernels/gelu/gelu.c` on the host and compares it with a float64 GELU for every Q8 input in [-1536, 1536]. The report is saved to `results/gelu_accuracy.txt`.
+Expect 80 lines ending in `PASS` and `Total cases: 80 Failures: 0`, then `results: results/gelu/bench_gelu_results.csv, plots: results/gelu/plots/`. Each line shows the input, the expected value, the baseline output and the custom output (all Q8 integers). The script also runs `tests/gelu_accuracy.py`, which compiles `kernels/gelu/gelu.c` on the host and compares it with a float64 GELU for every Q8 input in [-1536, 1536]. The report is saved to `results/gelu/gelu_accuracy.txt`.
 
 ### 6. Build and run your own program
 
@@ -180,18 +180,41 @@ Pass one extension name per plugin, for example `./scripts/run.sh gelu_test dot4
 
 ## Results
 
-Populated as runs complete. Full DOT4 results for all sizes are in `results/bench_dot_results.csv`.
+All numbers come from `./scripts/run_dot.sh` and `./scripts/run_gelu.sh`. Cycles are modeled (see Methodology). Raw data is in `results/dot4/` and `results/gelu/`; each folder has the CSVs and a `plots/` folder.
 
-| Kernel | Variant | Input size | Instructions | Modeled cycles | Speedup vs baseline | Correct |
-|---|---|---|---|---|---|---|
-| dot (int8) | baseline | 1024 | 7173 | 9220 | 1.00 | yes |
-| dot (int8) | custom (DOT4, 2-cycle assumed) | 1024 | 1802 | 2569 | 3.59 | yes |
-| GELU (Q8) | baseline | 64 random inputs, average | 113.7 | 120.0 | 1.00 | yes |
-| GELU (Q8) | custom (`gelu`, 8-cycle assumed) | 64 random inputs, average | 2.0 | 10.0 | 12.0 | yes |
+### DOT4 (int8 dot product, 2-cycle `dot4` assumed)
 
-Across the 64 random inputs the modeled speedup ranges from 8.6x (inputs where `tanh` is saturated, 83 to 88 baseline instructions) to 13.8x (full table lookup, 127 baseline instructions). Baseline GELU costs 4 to 7 instructions for \|x\| >= 4 and 83 to 127 otherwise; the custom call is always 2 (`gelu` plus `ret`).
+| Vector length n | Instructions: baseline → DOT4 | Modeled cycles: baseline → DOT4 | Speedup |
+|---|---|---|---|
+| 16 | 117 → 38 | 148 → 49 | 3.02x |
+| 64 | 453 → 122 | 580 → 169 | 3.43x |
+| 256 | 1797 → 458 | 2308 → 649 | 3.56x |
+| 1024 | 7173 → 1802 | 9220 → 2569 | 3.59x |
 
-GELU accuracy (`results/gelu_accuracy.txt`): over every Q8 input in [-1536, 1536] (3073 values), the largest error against float64 GELU is 0.0021 (about half a Q8 step) and the mean error is 0.0006. The GELU latency of 8 cycles is an assumption, so `results/bench_gelu_sensitivity.csv` sweeps it from 1 to 64 cycles.
+The speedup falls from 3.99x to 2.25x as the assumed `dot4` latency goes from 1 to 8 cycles (n = 1024), so it holds up well. All six DOT4 test cases match the Python reference.
+
+| Instructions per call | Speedup vs input size |
+|---|---|
+| ![DOT4 instructions](results/dot4/plots/bench_dot_instructions.png) | ![DOT4 speedup](results/dot4/plots/bench_dot_speedup.png) |
+| ![DOT4 instruction mix](results/dot4/plots/bench_dot_mix.png) | ![DOT4 latency sensitivity](results/dot4/plots/bench_dot_sensitivity.png) |
+
+### GELU (Q8 fixed point, 8-cycle `gelu` assumed)
+
+| Input path | Baseline instructions | Custom instructions | Speedup |
+|---|---|---|---|
+| x <= -4 or x >= 4 (clamped, early exit) | 7 (x <= -4), 4 (x >= 4) | 2 | 1.0x and 0.7x |
+| Table saturated (inputs near ±4) | 83 to 88 | 2 | 8.6x to 9.7x |
+| Full table lookup and interpolation | 118 to 127 | 2 | 12.0x to 13.8x |
+| Average over 64 random inputs | 113.7 | 2.0 | 12.0x (120.0 → 10.0 cycles) |
+
+The custom call is always 2 instructions (`gelu` plus `ret`). The one case where `gelu` does not help is the clamped input x >= 4: the software baseline exits after 4 instructions (7 cycles), so with an 8-cycle `gelu` the custom version is slightly slower (0.7x). The 16 directed cases include these two clamped inputs; the 64 random inputs (in [-4, 4)) do not. Baseline and custom return identical outputs on all 80 test inputs (16 directed, 64 random). The speedup falls from 46x at 1 cycle to 2.1x at 64 cycles (full-table input), so `gelu` stays faster across the whole sweep.
+
+| Instructions per call | Speedup across inputs |
+|---|---|
+| ![GELU instructions](results/gelu/plots/bench_gelu_instructions.png) | ![GELU speedup](results/gelu/plots/bench_gelu_speedup.png) |
+| ![GELU instruction mix](results/gelu/plots/bench_gelu_mix.png) | ![GELU latency sensitivity](results/gelu/plots/bench_gelu_sensitivity.png) |
+
+**GELU accuracy** (`results/gelu/gelu_accuracy.txt`, from `tests/gelu_accuracy.py`): over every Q8 input in [-1536, 1536] (3073 values), the largest error against a float64 GELU is 0.0021 (about half a Q8 step) and the mean error is 0.0006.
 
 ## Project Status
 
@@ -205,7 +228,7 @@ Report due **Nov 20, 2026**. Presentation on **Nov 21, 2026**.
 | Baseline kernels running on Spike | Complete (DOT product and GELU) |
 | Custom instruction running in Spike | Complete (DOT4 and GELU) |
 | Cycle model and experiments | Complete for both primitives |
-| GELU accuracy check | Complete (`results/gelu_accuracy.txt`) |
+| GELU accuracy check | Complete (`results/gelu/gelu_accuracy.txt`) |
 | Report and presentation | In progress |
 
 ## Decisions

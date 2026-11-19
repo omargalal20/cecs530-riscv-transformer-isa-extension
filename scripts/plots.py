@@ -1,5 +1,5 @@
 
-"""Make the report plots from results/*.csv and build/*_counts.csv.
+"""Make the report plots from results/<mnemonic>/*.csv and build/*_counts.csv.
 Usage: python3 scripts/plots.py <name> <title> <custom_mnemonic>      e.g. bench_dot "DOT4" dot4
 Colors: baseline = blue, custom = orange (validated palette, see the dataviz skill)."""
 import csv
@@ -22,7 +22,7 @@ def rows(path):
     return list(csv.DictReader(open(path)))
 
 
-OUT_DIR = "results/plots"
+OUT_DIR = "results"
 
 
 def save(fig, name):
@@ -34,10 +34,10 @@ def save(fig, name):
 def main():
     global OUT_DIR
     name, title, mnem = sys.argv[1:4]
-    OUT_DIR = f"results/plots/{mnem}"
+    OUT_DIR = f"results/{mnem}/plots"
     os.makedirs(OUT_DIR, exist_ok=True)
     is_gelu = mnem == "gelu"
-    all_results = rows(f"results/{name}_results.csv")
+    all_results = rows(f"results/{mnem}/{name}_results.csv")
     prefix = "random_" if is_gelu else "rand_"
     res = [r for r in all_results if r["case"].startswith(prefix)]
     if not res:
@@ -100,7 +100,7 @@ def main():
         save(fig, f"{name}_speedup")
 
     # 3. Sensitivity to the custom instruction's latency
-    sens = rows(f"results/{name}_sensitivity.csv")
+    sens = rows(f"results/{mnem}/{name}_sensitivity.csv")
     lat = [int(r[f"{mnem}_latency_cycles"]) for r in sens]; sp = [float(r["speedup"]) for r in sens]
     fig, ax = plt.subplots(figsize=(7, 4.2))
     ax.plot(lat, sp, "o-", color=CUST, lw=2, label=f"{title} modeled speedup")
