@@ -4,6 +4,7 @@
 #        bench/bench_gelu.c, tests/gen_gelu_vectors.py, tests/gelu_test.S, and the gelu plugin.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+python3 tests/gelu_accuracy.py > results/gelu_accuracy.txt
 python3 tests/gen_gelu_vectors.py > /dev/null
 ./scripts/build.sh bench_gelu bench/bench_gelu.c kernels/gelu/gelu.c
 ./scripts/build.sh gelu_test tests/gelu_test.S
