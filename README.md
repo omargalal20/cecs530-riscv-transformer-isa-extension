@@ -279,11 +279,6 @@ Report due **Nov 20, 2026**. Presentation on **Nov 21, 2026**.
 - Results come from small isolated kernels, not full end-to-end Transformer inference.
 - The latency of a new instruction is an assumption; the sensitivity sweep shows how much it matters.
 
-## Links
-
-- Foundation one-pager: _add link_
-- Shared Drive: _add link_
-
 ## References
 
 1. A. Vaswani et al., "Attention Is All You Need," arXiv:1706.03762, 2017.
