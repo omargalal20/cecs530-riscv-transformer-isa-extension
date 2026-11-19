@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 tests/gen_gelu_vectors.py > /dev/null
-./scripts/build.sh bench_gelu bench/bench_gelu.c kernels/gelu/gelu.c kernels/gelu/gelu_custom.c
+./scripts/build.sh bench_gelu bench/bench_gelu.c kernels/gelu/gelu.c
 ./scripts/build.sh gelu_test tests/gelu_test.S
 ./scripts/run.sh gelu_test gelu
 ./scripts/run.sh bench_gelu gelu
