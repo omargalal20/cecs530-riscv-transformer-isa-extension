@@ -4,7 +4,7 @@
 
 This repository contains the code, experiments and documentation for designing custom RISC-V instructions that accelerate Transformer operations. We add the instructions to the Spike simulator, run the same kernels with and without them, and compare instruction count and modeled execution cycles.
 
-> **Status:** the two primitives are locked: **DOT4** and **GELU**. Both are implemented in Spike and run with `./scripts/run_dot.sh` and `./scripts/run_gelu.sh`. See [Project Status](#project-status).
+> Two custom instructions, **DOT4** and **GELU**, are implemented in Spike. Run them with `./scripts/run_dot.sh` and `./scripts/run_gelu.sh` (see [Getting Started](#getting-started)).
 
 ---
 
@@ -231,21 +231,6 @@ The custom call is always 2 instructions (`gelu` plus `ret`). The one case where
 
 **GELU accuracy** (`results/gelu/gelu_accuracy.txt`, from `tests/gelu_accuracy.py`): over every Q8 input in [-1536, 1536] (3073 values), the largest error against a float64 GELU is 0.0021 (about half a Q8 step) and the mean error is 0.0006.
 
-## Project Status
-
-Report due **Nov 20, 2026**. Presentation on **Nov 21, 2026**.
-
-| Milestone | Status |
-|---|---|
-| Topic selected, team registered | Complete |
-| Drive, repository and one-pager | Complete |
-| Toolchain and Spike build verified | Complete |
-| Baseline kernels running on Spike | Complete (DOT product and GELU) |
-| Custom instruction running in Spike | Complete (DOT4 and GELU) |
-| Cycle model and experiments | Complete for both primitives |
-| GELU accuracy check | Complete (`results/gelu/gelu_accuracy.txt`) |
-| Report and presentation | In progress |
-
 ## Decisions
 
 | Decision | Outcome |
@@ -255,22 +240,6 @@ Report due **Nov 20, 2026**. Presentation on **Nov 21, 2026**.
 | Spike route | `--extlib` plugin, built by `scripts/setup.sh` |
 | Cycle measurement | Modeled cycles, one latency table for baseline and custom (approved by the instructor) |
 | Compiler flags | `-O2 -ffp-contract=off` for all kernels |
-
-## Working Together
-
-- Work on a branch named `type/short-topic` (for example `feat/dot4-encoding`), open a pull request, and have a teammate review before merging. No direct pushes to `main`, and no force-pushes to shared branches.
-- Commit messages follow `type(scope): summary`, present tense, under about 72 characters.
-
-| Type | Use for |
-|---|---|
-| `feat` | New instruction, kernel or simulator change |
-| `fix` | Bug fix |
-| `test` | Correctness tests |
-| `bench` | Measurement scripts and the cycle model |
-| `docs` | README, ISA spec, decision records |
-| `chore` | Setup and housekeeping |
-
-- Large traces and logs are not committed (see `.gitignore`). Summary CSVs and figures are.
 
 ## Limitations
 
