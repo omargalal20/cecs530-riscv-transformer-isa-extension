@@ -23,6 +23,6 @@
   },
   "source": {
     "documented": "alu 1, mul 1, load/store 1, branch not-taken 1, branch taken 3, jump 2, div 3..35 (worst case used), fdiv/fsqrt 1..19 (worst case used)",
-    "assumed": "fp_add/fp_mul/fp_fma/fp_other (manual gives a configurable range, we pick 3 and 2), dot4 (our own instruction, swept 1..4), gelu (our own instruction, swept widely)"
+    "assumed": "fp_add/fp_mul/fp_fma/fp_other (manual gives a configurable range, we pick 3 and 2), dot4 (our own instruction, swept 1..8), gelu (our own instruction, swept widely)"
   }
 }
